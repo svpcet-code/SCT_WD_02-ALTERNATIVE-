@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Calculator</title>
+<style>
+  :root { --bg:#0f1320; --panel:#161b2e; --accent:#e94560; --muted:#2a3152; }
+  *{box-sizing:border-box} body{margin:0; font-family:system-ui,Segoe UI,Arial; background:var(--bg); color:#fff; display:grid; place-items:center; min-height:100vh}
+  .calc{width:min(92vw,400px); background:var(--panel); border-radius:18px; box-shadow:0 12px 30px rgba(0,0,0,.35); padding:18px}
+  .display{height:96px; background:#0c1020; border-radius:14px; padding:14px; text-align:right; overflow:hidden}
+  .exp{font-size:14px; opacity:.7; min-height:20px; word-wrap:anywhere}
+  .out{font-size:34px; font-weight:700; margin-top:6px; word-wrap:anywhere}
+  .keys{margin-top:14px; display:grid; grid-template-columns:repeat(4,1fr); gap:10px}
+  button{border:none; border-radius:14px; padding:16px; font-size:18px; background:var(--muted); color:#fff; cursor:pointer; transition:transform .03s ease}
+  button:active{transform:scale(.98)}
+  .op{background:#26315a}
+  .wide{grid-column:span 2}
+  .danger{background:#3a2a35}
+  .equals{background:var(--accent); font-weight:700}
+</style>
+</head>
+<body>
+  <div class="calc" role="application" aria-label="Calculator">
+    <div class="display" aria-live="polite">
+      <div id="exp" class="exp"></div>
+      <div id="out" class="out">0</div>
+    </div>
+
+    <div class="keys">
+      <button class="danger" data-action="clear">AC</button>
+      <button class="danger" data-action="back">⌫</button>
+      <button class="op" data-value="%">%</button>
+      <button class="op" data-value="/">÷</button>
+
+      <button data-value="7">7</button>
+      <button data-value="8">8</button>
+      <button data-value="9">9</button>
+      <button class="op" data-value="*">×</button>
+
+      <button data-value="4">4</button>
+      <button data-value="5">5</button>
+      <button data-value="6">6</button>
+      <button class="op" data-value="-">−</button>
+
+      <button data-value="1">1</button>
+      <button data-value="2">2</button>
+      <button data-value="3">3</button>
+      <button class="op" data-value="+">+</button>
+
+      <button data-action="sign">±</button>
+      <button data-value="0">0</button>
+      <button data-value=".">.</button>
+      <button class="equals" data-action="equals">=</button>
+
+      <button class="wide" data-value="(">(</button>
+      <button class="wide" data-value=")">)</button>
+    </div>
+  </div>
+
+<script>
+/* === Calculator Logic === */
+const expEl = document.getElementById('exp');
+const outEl = document.getElementById('out');
+let expr = "";        // full input expression (string)
+let justEvaluated = false;
+
+const allowed = /^[\d+\-*/().% ]+$/; // for safe-eval guard
+
+function render() {
+  expEl.textContent = expr;
+  outEl.textContent = preview(expr) ?? "0";
+}
+
+function insert(val) {
+  if (justEvaluated && /[\d.(]/.test(val)) { expr = ""; } // start new number after result
+  justEvaluated = false;
+  // basic input rules
+  if (val === "." && /(\.\d*|\.)$/.test(tokenTail())) return; // prevent double dots
+  expr += val;
+  render();
+}
+function tokenTail() {
+  const m = expr.match(/(\d+(\.\d+)?)$/);
+  return m ? m[0] : "";
+}
+
+function clearAll(){ expr=""; justEvaluated=false; render(); }
+function backspace(){ if(justEvaluated){clearAll();return;} expr = expr.slice(0,-1); render(); }
+function toggleSign(){
+  // toggles sign of last number
+  const m = expr.match(/(-?\d*\.?\d+)(?!.*\d)/);
+  if(!m) return;
+  const num = m[0].startsWith('-') ? m[0].slice(1) : '-'+m[0];
+  expr = expr.slice(0, m.index) + num + expr.slice(m.index + m[0].length);
+  render();
+}
+
+function percentTransform(s){
+  // Convert a%b -> (a*b/100) and standalone n% -> (n/100)
+  return s.replace(/(\d*\.?\d+)%/g,'($1/100)');
+}
+
+function sanitize(s){
+  s = s.replace(/×/g,'*').replace(/÷/g,'/'); // just in case
+  s = percentTransform(s);
+  return s;
+}
+
+function preview(s){
+  const cleaned = sanitize(s);
+  if (!cleaned || !allowed.test(cleaned)) return null;
+  try{
+    // eslint-disable-next-line no-new-func
+    const val = Function(`"use strict"; return (${cleaned})`)();
+    if (val === undefined || Number.isNaN(val) || !isFinite(val)) return null;
+    return String(val);
+  }catch{ return null; }
+}
+
+function evaluate(){
+  const result = preview(expr);
+  if(result===null){ outEl.textContent="Error"; return; }
+  outEl.textContent = result;
+  expr = result; // keep result for chained operations
+  justEvaluated = true;
+}
+
+/* === Events: Clicks === */
+document.querySelector('.keys').addEventListener('click', (e)=>{
+  const btn = e.target.closest('button'); if(!btn) return;
+  const val = btn.dataset.value;
+  const act = btn.dataset.action;
+  if (val) insert(val);
+  else if (act === 'clear') clearAll();
+  else if (act === 'back') backspace();
+  else if (act === 'equals') evaluate();
+  else if (act === 'sign') toggleSign();
+});
+
+/* === Events: Keyboard === */
+window.addEventListener('keydown',(e)=>{
+  const k = e.key;
+  if (/^[0-9()+\-*/.%]$/.test(k)) { insert(k); }
+  else if (k === 'Enter' || k === '=') { e.preventDefault(); evaluate(); }
+  else if (k === 'Backspace') { backspace(); }
+  else if (k === 'Escape' || k === 'Delete') { clearAll(); }
+});
+
+render();
+</script>
+</body>
+</html>
